@@ -1,0 +1,225 @@
+libname in 'C:\biocomputational\Project 2';
+
+/***   READ IN ALL DATASETS   ***/
+
+data demog ;
+set in.demog ;
+dov = doe ;
+age=(doe-dob)/365.25 ;
+proc sort ; by subject ;
+proc contents ;
+proc print data = demog (obs=10) ; title 'demog' ;
+run ;
+
+data misc ;
+set in.misc ;
+proc sort ; by subject dov ;
+proc contents ;
+proc print data = misc (obs=10) ; title 'misc' ;
+run ;
+
+data hw ;
+set in.hw ;
+proc sort ; by subject dov ;
+proc contents ;
+proc print data = hw (obs=10) ; title 'hw' ;
+run ;
+
+data bp ;
+set in.bp ;
+proc sort ; by subject dov  ;
+proc contents ;
+proc print data = bp (obs=10) ; title 'bp' ;
+run ;
+
+data glucose ;
+set in.glucose ;
+proc sort ; by subject dov ;
+proc contents ;
+proc print data = glucose (obs=10) ; title 'glucose' ;
+run ;
+
+data lipid ;
+set in.lipid ;
+proc sort ; by subject dov ;
+proc contents ;
+proc print data = lipid (obs =10) ; title 'lipid' ;
+run ;
+
+
+/***     MERGE ALL DATASETS THAT HAVE MULTIPLE RECORDS PER SUBJECT BY SUBJECT AND DOV   ****/
+
+data m1 ;
+merge misc hw bp glucose lipid ; by subject dov ;
+proc sort ; by subject ;
+proc print data = m1 (obs=10); title 'm1' ;
+run ;
+
+/***  PEFORM A SECOND MERGE WITH DATASETS THAT HAVE ONLY ONE RECORD PER SUBJECT BY SUBJECT ONLY  ***/
+
+data m2 ;
+merge demog m1 ; by subject ;
+proc sort ; by subject dov ;
+proc print data = m2 (obs=10); title 'm2' ;
+run ;
+
+/***  KEEP ONLY FIRST RECORD FOR EACH SUBJECT ***/
+
+data newdata ;
+set m2 ; by subject dov ;
+if first.subject ;
+proc contents ;
+proc print data = newdata (obs=10) ; title 'first record' ;
+run ;
+
+/***  CALCULATE AGE and BMI  ***/
+
+data newdata ;
+set newdata ; 
+doe = dov ;
+age = (dov-dob)/365.25 ;                 * calculate age;
+weight_kg = weight*0.454;                * convert pound to kilogram (kg);
+height_cm = height*2.54;                 * convert inch to centimeter (cm);
+height_m  = height_cm/100;               * convert cm to meter (m);
+bmi = weight_kg/(height_m**2);           * calculate the body mass index; 
+proc print data = newdata (obs=10) ; title 'newdata with age and bmi calculated' ;
+run ;
+
+/***  DEFINE ALL FORMATS ***/
+
+data newdata ;
+set newdata ;
+format age 5.1 ;
+PROC FORMAT;
+VALUE $genderf 
+F='female'
+M='male' ;
+PROC FORMAT;
+VALUE sitef
+1='Arizona'
+2='California'
+3='New Jersey'
+4='New York'
+5='Texas' ;
+PROC FORMAT;
+VALUE smokef 
+0='No'
+1='Yes' ;
+PROC FORMAT;
+VALUE drinkf 
+1='Never'
+2='less than one drink per week'
+3='1-3 drinks per week'
+4='4-6 drinks per week'
+5='one drink or more per day' ;
+PROC FORMAT;
+VALUE maritalf 
+1='Single'
+2='Married' 
+3='Divorced'
+4='Other' ;
+PROC FORMAT;
+VALUE educationf 
+1='below high school'
+2='high school graduate' 
+3='college graduate'
+4='post-college' ;
+PROC FORMAT;
+VALUE pregnancyf 
+0='No'
+1='Yes' 
+9='N/A' ;
+PROC FORMAT;
+VALUE exercisef 
+0='No'
+1='Yes' ;
+PROC FORMAT;
+VALUE chdf 
+0='No'
+1='Yes' ;
+proc print data = newdata (obs=10) ; 
+var site subject gender dob doe age smoke drink marital education height weight bmi sbp dbp glucose tc tg hdl ldl pregnancy exercise chd ; 
+format gender $genderf.
+       site sitef. 
+	   smoke smokef.
+	   drink drinkf.
+	   marital maritalf.
+	   education educationf.
+	   pregnancy pregnancyf.
+	   exercise exercisef.
+	   chd chdf. ;
+title 'newdata with formats' ;
+run ;
+
+PROC UNIVARIATE DATA=newdata NORMAL;
+   VAR age sbp dbp glucose height weight bmi tc tg hdl ldl ;
+   HISTOGRAM age sbp dbp glucose height weight bmi tc tg hdl ldl ;
+   CLASS chd ;
+   TITLE 'Test the normality of age,sbp, dbp, glucose, height, weight, bmi, tc, tg,hdl and ldl by chd status';
+RUN;
+
+PROC NPAR1WAY DATA=newdata WILCOXON;
+   VAR age sbp dbp glucose height weight bmi tc tg hdl ldl ;
+   CLASS chd ;
+   TITLE 'Test if members from chd groups have the same median at the entry of the study: Wilcoxon Rank Sum Test';
+RUN;
+
+
+PROC FREQ DATA=newdata;
+   TABLES (gender smoke drink marital education exercise pregnancy)*chd / CHISQ EXPECTED;
+   TITLE 'Testing hypothesis of equal proportions between chd groups';
+RUN;
+
+
+PROC LOGISTIC DATA=newdata;
+CLASS gender smoke drink marital education exercise pregnancy ;
+   MODEL chd(EVENT='1') = age sbp dbp glucose height weight bmi tc tg hdl ldl gender smoke drink marital education exercise pregnancy / SELECTION=FORWARD DETAILS;
+   TITLE 'Logistic regression with forward selection: using default thresholds';
+RUN;
+
+PROC LOGISTIC DATA=newdata;
+CLASS gender smoke drink marital education exercise pregnancy ;
+   MODEL chd(EVENT='1') = age sbp dbp glucose height weight bmi tc tg hdl ldl gender smoke drink marital education exercise pregnancy / SELECTION=BACKWARD DETAILS;
+   TITLE 'Logistic regression with backward selection: using default thresholds';
+RUN;
+
+PROC LOGISTIC DATA=newdata;
+CLASS gender smoke drink marital education exercise pregnancy ;
+   MODEL chd(EVENT='1') = age sbp dbp glucose height weight bmi tc tg hdl ldl gender smoke drink marital education exercise pregnancy / SELECTION=STEPWISE DETAILS;
+   TITLE 'Logistic regression with stepwise selection: using default thresholds';
+RUN;
+
+/***  CREATE CHARTS AND GRAPHS ***/
+
+ODS RTF FILE='C:\biocomputational\Project 2\SAS graphs2.rtf';
+
+PROC GCHART DATA=newdata;
+VBAR chd / DISCRETE
+           SUMVAR=glucose TYPE=MEAN  MEAN ERRORBAR=BOTH CLM=95
+           GROUP=gender;
+FORMAT chd chdf. gender $genderf.;
+TITLE 'Mean glucose level by CHD Status and Gender';
+RUN;
+
+proc sort data=newdata;
+by chd;
+run;
+
+PROC BOXPLOT DATA=newdata;
+PLOT age*chd;
+FORMAT chd chdf.;
+TITLE 'Mean age by CHD History-BOXPLOT';
+RUN;
+
+PROC GCHART DATA=newdata;
+HBAR chd/ DISCRETE TYPE=PERCENT GROUP=smoke;
+FORMAT chd chdf. smoke smokef. ;
+TITLE 'Association between chd and smoke-HBAR';
+RUN;
+
+PROC GCHART DATA=newdata;
+HBAR chd/ DISCRETE TYPE=PERCENT GROUP=pregnancy;
+FORMAT chd chdf. pregnancy pregnancyf.;
+TITLE 'Association between chd and pregnancy-HBAR';
+RUN;
+ODS RTF CLOSE;
